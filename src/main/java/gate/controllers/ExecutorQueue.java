@@ -15,6 +15,7 @@ public class ExecutorQueue {
 	private ExecutorService executor;
 	private int maxParallelTasks;
 
+	private boolean interrupted = false;
 	private int submittedTasks = 0;
 	private Collection<Iterator<Runnable>> tasksQueue = new LinkedHashSet<>();
 	private Map<RunnableTask, Future<?>> futures = new LinkedHashMap<>();
@@ -30,8 +31,12 @@ public class ExecutorQueue {
 		executeNext();
 	}
 
+	public synchronized void interrupt() {
+		interrupted = true;
+	}
+
 	private synchronized void executeNext() {
-		while (submittedTasks < maxParallelTasks) {
+		while (!interrupted && submittedTasks < maxParallelTasks) {
 			Iterator<Iterator<Runnable>> taskQueueIterator = tasksQueue.iterator();
 			if (taskQueueIterator.hasNext()) {
 				Iterator<Runnable> tasksIterator = taskQueueIterator.next();

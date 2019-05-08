@@ -139,9 +139,20 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		try {
 			queue.awaitTasksComplete();
 		} catch (Exception e) {
+			queue.interrupt();
+			while (true) {
+				try {
+					queue.awaitTasksComplete();
+					break;
+				} catch (Exception e1) {
+					logger.warn(e1);
+				}
+			}
 			throw new ExecutionException(e);
 		} finally {
-			cleanupDuplicatedResources(parallelProcessingResources);
+			synchronized (parallelProcessingResources) {
+				cleanupDuplicatedResources(parallelProcessingResources);
+			}
 		}
 	}
 
