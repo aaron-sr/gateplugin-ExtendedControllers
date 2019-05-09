@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.log4j.Logger;
 
@@ -42,6 +43,8 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	private static Logger logger = Logger.getLogger(ParallelDocumentAnalyserController.class);
 
 	private Integer parallelTasks;
+	private Boolean synchronizeCorpus;
+	private Boolean orderedDocumentLoading;
 
 	private ExecutorService executor;
 	private boolean shutdownExecutor = false;
@@ -94,7 +97,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			throw new ExecutionException(e);
 		}
 
-		Iterator<Document> documents = corpus.iterator();
 		ExecutorQueue queue = new ExecutorQueue(executor, parallelTasks);
 		AtomicInteger documentIndexHolder = new AtomicInteger(0);
 
@@ -102,32 +104,80 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 			@Override
 			public boolean hasNext() {
-				return documents.hasNext();
+				return documentIndexHolder.get() < corpus.size();
 			}
 
 			@Override
 			public Runnable next() {
-				int documentIndex = documentIndexHolder.get();
-				boolean unloadDocument;
-				Document document;
-				synchronized (corpus) {
-					unloadDocument = !corpus.isDocumentLoaded(documentIndex);
-					document = documents.next();
-				}
-				documentIndexHolder.set(documentIndex + 1);
+				int documentIndex = documentIndexHolder.getAndAdd(1);
 
-				Runnable task = buildParallelTask(parallelProcessingResources, document);
+				Boolean unloadDocumentUpfront;
+				Document documentUpfront;
+				if (orderedDocumentLoading) {
+					if (synchronizeCorpus) {
+						synchronized (corpus) {
+							unloadDocumentUpfront = !corpus.isDocumentLoaded(documentIndex);
+							documentUpfront = corpus.get(documentIndex);
+						}
+					} else {
+						unloadDocumentUpfront = !corpus.isDocumentLoaded(documentIndex);
+						documentUpfront = corpus.get(documentIndex);
+					}
+				} else {
+					unloadDocumentUpfront = null;
+					documentUpfront = null;
+				}
+
 				return new Runnable() {
 
 					@Override
 					public void run() {
+						boolean unloadDocument;
+						Document document;
+						if (orderedDocumentLoading) {
+							unloadDocument = unloadDocumentUpfront;
+							document = documentUpfront;
+						} else {
+							if (synchronizeCorpus) {
+								synchronized (corpus) {
+									unloadDocument = !corpus.isDocumentLoaded(documentIndex);
+									document = corpus.get(documentIndex);
+								}
+							} else {
+								unloadDocument = !corpus.isDocumentLoaded(documentIndex);
+								document = corpus.get(documentIndex);
+							}
+						}
 						try {
-							task.run();
+							executeDocumentParallel(document, parallelProcessingResources);
 						} finally {
 							if (unloadDocument) {
-								synchronized (corpus) {
+								if (synchronizeCorpus) {
+									synchronized (corpus) {
+										Factory.deleteResource(document);
+									}
+								} else {
 									Factory.deleteResource(document);
 								}
+							}
+						}
+					}
+
+					private void executeDocumentParallel(Document document,
+							Collection<List<ProcessingResource>> parallelProcessingResources) {
+						List<ProcessingResource> processingResources;
+						synchronized (parallelProcessingResources) {
+							Iterator<List<ProcessingResource>> iterator = parallelProcessingResources.iterator();
+							processingResources = iterator.next();
+							iterator.remove();
+						}
+						try {
+							executeProcessingResources(processingResources, document);
+						} catch (ExecutionException e) {
+							throw new RuntimeException(e);
+						} finally {
+							synchronized (parallelProcessingResources) {
+								parallelProcessingResources.add(processingResources);
 							}
 						}
 					}
@@ -145,7 +195,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 					queue.awaitTasksComplete();
 					break;
 				} catch (Exception e1) {
-					logger.warn(e1);
+					logger.error("another parallel execution exception", e1);
 				}
 			}
 			throw new ExecutionException(e);
@@ -180,34 +230,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		}
 	}
 
-	protected Runnable buildParallelTask(Collection<List<ProcessingResource>> parallelProcessingResources,
-			Document document) {
-		List<ProcessingResource> processingResources;
-		synchronized (parallelProcessingResources) {
-			Iterator<List<ProcessingResource>> iterator = parallelProcessingResources.iterator();
-			processingResources = iterator.next();
-			iterator.remove();
-		}
-		Runnable task = new Runnable() {
-
-			@Override
-			public void run() {
-				try {
-					if (document.getContent().toString().length() > 0) {
-						executeProcessingResources(processingResources, document);
-					}
-				} catch (ExecutionException e) {
-					throw new RuntimeException(e);
-				} finally {
-					synchronized (parallelProcessingResources) {
-						parallelProcessingResources.add(processingResources);
-					}
-				}
-			}
-		};
-		return task;
-	}
-
 	protected void executeProcessingResources(List<ProcessingResource> processingResources, Document document)
 			throws ExecutionException {
 		for (int i = 0; i < processingResources.size(); i++) {
@@ -239,6 +261,28 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	public Integer getParallelTasks() {
 		return parallelTasks;
+	}
+
+	@RunTime
+	@Optional
+	@CreoleParameter(comment = "synchronize the access of the corpus to avoid concurrent exceptions", defaultValue = "true")
+	public void setSynchronizeCorpus(Boolean synchronizeCorpus) {
+		this.synchronizeCorpus = synchronizeCorpus;
+	}
+
+	public Boolean getSynchronizeCorpus() {
+		return synchronizeCorpus;
+	}
+
+	@RunTime
+	@Optional
+	@CreoleParameter(comment = "load documents in order (e.g. to avoid extensive forward/backward skipping of the underlying data), slower since single-threaded", defaultValue = "true")
+	public void setOrderedDocumentLoading(Boolean orderedDocumentLoading) {
+		this.orderedDocumentLoading = orderedDocumentLoading;
+	}
+
+	public Boolean getOrderedDocumentLoading() {
+		return orderedDocumentLoading;
 	}
 
 	@RunTime

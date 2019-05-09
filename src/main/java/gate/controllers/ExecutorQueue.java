@@ -2,23 +2,21 @@ package gate.controllers;
 
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
-public class ExecutorQueue {
+import org.apache.http.concurrent.BasicFuture;
 
+public class ExecutorQueue {
 	private ExecutorService executor;
 	private int maxParallelTasks;
 
 	private boolean interrupted = false;
 	private int submittedTasks = 0;
 	private Collection<Iterator<Runnable>> tasksQueue = new LinkedHashSet<>();
-	private Map<RunnableTask, Future<?>> futures = new LinkedHashMap<>();
+	private Collection<Future<?>> futures = new LinkedHashSet<>();
 
 	public ExecutorQueue(ExecutorService executor, int maxSubmittedTasks) {
 		this.executor = executor;
@@ -41,10 +39,23 @@ public class ExecutorQueue {
 			if (taskQueueIterator.hasNext()) {
 				Iterator<Runnable> tasksIterator = taskQueueIterator.next();
 				if (tasksIterator.hasNext()) {
-					submittedTasks++;
-					RunnableTask runnableTask = new RunnableTask(this, tasksIterator.next());
-					Future<?> submit = executor.submit(runnableTask);
-					futures.put(runnableTask, submit);
+					Runnable next = null;
+					Exception exception = null;
+					try {
+						next = tasksIterator.next();
+					} catch (Exception e) {
+						exception = e;
+					}
+					if (exception != null) {
+						BasicFuture<?> fail = new BasicFuture<Object>(null);
+						fail.failed(exception);
+						futures.add(fail);
+					} else if (next != null) {
+						RunnableTask runnableTask = new RunnableTask(this, next);
+						Future<?> submit = executor.submit(runnableTask);
+						futures.add(submit);
+						submittedTasks++;
+					}
 				} else {
 					taskQueueIterator.remove();
 					continue;
@@ -61,12 +72,12 @@ public class ExecutorQueue {
 	}
 
 	public void awaitTasksComplete() throws InterruptedException, ExecutionException {
-		while (!futures.isEmpty()) {
+		while ((!interrupted && !tasksQueue.isEmpty()) || (interrupted && !futures.isEmpty())) {
 			Future<?> future = null;
 			synchronized (this) {
 				if (!futures.isEmpty()) {
-					Iterator<Entry<RunnableTask, Future<?>>> iterator = futures.entrySet().iterator();
-					future = iterator.next().getValue();
+					Iterator<Future<?>> iterator = futures.iterator();
+					future = iterator.next();
 					iterator.remove();
 				}
 			}
