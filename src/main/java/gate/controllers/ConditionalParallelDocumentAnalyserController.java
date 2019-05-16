@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.log4j.Logger;
-import org.spf4j.perf.MeasurementRecorder;
-import org.spf4j.perf.impl.RecorderFactory;
 
 import gate.ProcessingResource;
 import gate.creole.ConditionalController;
@@ -27,7 +25,6 @@ public class ConditionalParallelDocumentAnalyserController extends ParallelDocum
 
 	protected List<RunningStrategy> strategiesList = new ArrayList<>();
 	private Map<ProcessingResource, List<RunningStrategy>> parallelRunningStrategies;
-	private MeasurementRecorder runningStrategyRecorder;
 
 	@Override
 	public void cleanup() {
@@ -50,8 +47,6 @@ public class ConditionalParallelDocumentAnalyserController extends ParallelDocum
 	protected Collection<List<ProcessingResource>> buildParallelProcessingResources()
 			throws ResourceInstantiationException {
 		Collection<List<ProcessingResource>> parallelProcessingResources = super.buildParallelProcessingResources();
-
-		runningStrategyRecorder = RecorderFactory.createDirectRecorder(RunningStrategy.class, "ms");
 
 		parallelRunningStrategies = buildParallelRunningStrategies(parallelProcessingResources);
 
@@ -87,18 +82,12 @@ public class ConditionalParallelDocumentAnalyserController extends ParallelDocum
 	}
 
 	@Override
-	protected void runComponent(int processingResourceIndex, ProcessingResource processingResource)
+	protected void runComponent(int documentIndex, int processingResourceIndex, ProcessingResource processingResource)
 			throws ExecutionException {
 		RunningStrategy runningStrategy = parallelRunningStrategies.get(processingResource)
 				.get(processingResourceIndex);
-		long start = System.currentTimeMillis();
-		boolean shouldRun = runningStrategy.shouldRun();
-		long measurement = System.currentTimeMillis() - start;
-		if (measurement > 0) {
-			runningStrategyRecorder.record(measurement);
-		}
-		if (shouldRun) {
-			super.runComponent(processingResourceIndex, processingResource);
+		if (runningStrategy.shouldRun()) {
+			super.runComponent(documentIndex, processingResourceIndex, processingResource);
 		}
 	}
 

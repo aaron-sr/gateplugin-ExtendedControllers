@@ -81,11 +81,12 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	protected void executeNoneParallel() throws ExecutionException {
 		if (document == null) {
-			for (Document document : corpus) {
-				executeProcessingResources(processingResources, document);
+			for (int documentIndex = 0; documentIndex < corpus.size(); documentIndex++) {
+				Document document = corpus.get(documentIndex);
+				executeProcessingResources(processingResources, documentIndex, document);
 			}
 		} else {
-			executeProcessingResources(processingResources, document);
+			executeProcessingResources(processingResources, corpus.indexOf(document), document);
 		}
 	}
 
@@ -149,7 +150,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 							}
 						}
 						try {
-							executeDocumentParallel(document, parallelProcessingResources);
+							executeDocumentParallel(parallelProcessingResources, documentIndex, document);
 						} finally {
 							if (unloadDocument) {
 								if (synchronizeCorpus) {
@@ -163,8 +164,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 						}
 					}
 
-					private void executeDocumentParallel(Document document,
-							Collection<List<ProcessingResource>> parallelProcessingResources) {
+					private void executeDocumentParallel(
+							Collection<List<ProcessingResource>> parallelProcessingResources, Integer documentIndex,
+							Document document) {
 						List<ProcessingResource> processingResources;
 						synchronized (parallelProcessingResources) {
 							Iterator<List<ProcessingResource>> iterator = parallelProcessingResources.iterator();
@@ -172,7 +174,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 							iterator.remove();
 						}
 						try {
-							executeProcessingResources(processingResources, document);
+							executeProcessingResources(processingResources, documentIndex, document);
 						} catch (ExecutionException e) {
 							throw new RuntimeException(e);
 						} finally {
@@ -230,16 +232,17 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		}
 	}
 
-	protected void executeProcessingResources(List<ProcessingResource> processingResources, Document document)
-			throws ExecutionException {
-		for (int i = 0; i < processingResources.size(); i++) {
-			ProcessingResource processingResource = processingResources.get(i);
+	protected void executeProcessingResources(List<ProcessingResource> processingResources, Integer documentIndex,
+			Document document) throws ExecutionException {
+		for (int processingResourceIndex = 0; processingResourceIndex < processingResources
+				.size(); processingResourceIndex++) {
+			ProcessingResource processingResource = processingResources.get(processingResourceIndex);
 			if (processingResource instanceof LanguageAnalyser) {
 				LanguageAnalyser languageAnalyser = (LanguageAnalyser) processingResource;
 				languageAnalyser.setCorpus(corpus);
 				languageAnalyser.setDocument(document);
 			}
-			runComponent(i, processingResource);
+			runComponent(documentIndex, processingResourceIndex, processingResource);
 			if (processingResource instanceof LanguageAnalyser) {
 				LanguageAnalyser languageAnalyser = (LanguageAnalyser) processingResource;
 				languageAnalyser.setCorpus(null);
@@ -248,9 +251,15 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		}
 	}
 
-	protected void runComponent(int processingResourceIndex, ProcessingResource processingResource)
+	protected void runComponent(int documentIndex, int processingResourceIndex, ProcessingResource processingResource)
 			throws ExecutionException {
-		processingResource.execute();
+		try {
+			processingResource.execute();
+		} catch (Exception e) {
+			throw new ExecutionException(
+					"failed to run processing resource " + processingResourceIndex + " on document " + documentIndex,
+					e);
+		}
 	}
 
 	@RunTime
