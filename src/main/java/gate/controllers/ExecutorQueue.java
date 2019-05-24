@@ -24,13 +24,22 @@ public class ExecutorQueue {
 	}
 
 	public synchronized void submit(Iterator<Runnable> tasks) {
+		interrupted = false;
 		tasksQueue.add(tasks);
 
 		executeNext();
 	}
 
 	public synchronized void interrupt() {
-		interrupted = true;
+		if (!interrupted) {
+			interrupted = true;
+			tasksQueue.clear();
+			for (Future<?> future : futures) {
+				if (!future.isDone() && !future.isCancelled()) {
+					future.cancel(true);
+				}
+			}
+		}
 	}
 
 	private synchronized void executeNext() {
@@ -45,6 +54,9 @@ public class ExecutorQueue {
 						next = tasksIterator.next();
 					} catch (Exception e) {
 						exception = e;
+					}
+					if (interrupted) {
+						return;
 					}
 					if (exception != null) {
 						BasicFuture<?> fail = new BasicFuture<Object>(null);

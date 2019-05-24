@@ -68,6 +68,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	@Override
 	protected void executeImpl() throws ExecutionException {
+		interrupted = false;
 		if (corpus == null) {
 			throw new ExecutionException("corpus is null");
 		}
@@ -109,6 +110,10 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 			@Override
 			public Runnable next() {
+				if (isInterrupted()) {
+					queue.interrupt();
+					return null;
+				}
 				int documentIndex = documentIndexHolder.getAndAdd(1);
 
 				Boolean unloadDocumentUpfront;
@@ -207,6 +212,11 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		}
 	}
 
+	@Override
+	public synchronized void interrupt() {
+		interrupted = true;
+	}
+
 	protected Collection<List<ProcessingResource>> buildParallelProcessingResources()
 			throws ResourceInstantiationException {
 		Collection<List<ProcessingResource>> parallelProcessingResources = new ArrayList<>();
@@ -235,6 +245,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			Document document) throws ExecutionException {
 		for (int processingResourceIndex = 0; processingResourceIndex < processingResources
 				.size(); processingResourceIndex++) {
+			if (isInterrupted()) {
+				break;
+			}
 			ProcessingResource processingResource = processingResources.get(processingResourceIndex);
 			if (processingResource instanceof LanguageAnalyser) {
 				LanguageAnalyser languageAnalyser = (LanguageAnalyser) processingResource;
