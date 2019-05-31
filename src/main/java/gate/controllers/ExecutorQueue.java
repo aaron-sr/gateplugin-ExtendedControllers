@@ -6,8 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-
-import org.apache.http.concurrent.BasicFuture;
+import java.util.concurrent.TimeUnit;
 
 public class ExecutorQueue {
 	private ExecutorService executor;
@@ -24,22 +23,21 @@ public class ExecutorQueue {
 	}
 
 	public synchronized void submit(Iterator<Runnable> tasks) {
-		interrupted = false;
 		tasksQueue.add(tasks);
 
 		executeNext();
 	}
 
 	public synchronized void interrupt() {
-		if (!interrupted) {
-			interrupted = true;
-			tasksQueue.clear();
-			for (Future<?> future : futures) {
-				if (!future.isDone() && !future.isCancelled()) {
-					future.cancel(true);
-				}
-			}
-		}
+		interrupted = true;
+	}
+
+	public boolean isInterrupted() {
+		return interrupted;
+	}
+
+	public boolean hasCompleted() {
+		return tasksQueue.isEmpty() && futures.isEmpty();
 	}
 
 	private synchronized void executeNext() {
@@ -55,13 +53,9 @@ public class ExecutorQueue {
 					} catch (Exception e) {
 						exception = e;
 					}
-					if (interrupted) {
-						return;
-					}
 					if (exception != null) {
-						BasicFuture<?> fail = new BasicFuture<Object>(null);
-						fail.failed(exception);
-						futures.add(fail);
+						Future<?> failed = new FailedFuture<>(exception);
+						futures.add(failed);
 					} else if (next != null) {
 						RunnableTask runnableTask = new RunnableTask(this, next);
 						Future<?> submit = executor.submit(runnableTask);
@@ -84,7 +78,7 @@ public class ExecutorQueue {
 	}
 
 	public void awaitTasksComplete() throws InterruptedException, ExecutionException {
-		while ((!interrupted && !tasksQueue.isEmpty()) || (interrupted && !futures.isEmpty())) {
+		while ((!interrupted && (!tasksQueue.isEmpty() || !futures.isEmpty())) || (interrupted && !futures.isEmpty())) {
 			Future<?> future = null;
 			synchronized (this) {
 				if (!futures.isEmpty()) {
@@ -113,6 +107,43 @@ public class ExecutorQueue {
 		public void run() {
 			runnable.run();
 			queue.finishedTask(this);
+		}
+
+	}
+
+	private static class FailedFuture<V> implements Future<V> {
+
+		private boolean canceled = false;
+		private Exception exception;
+
+		public FailedFuture(Exception exception) {
+			this.exception = exception;
+		}
+
+		@Override
+		public boolean cancel(boolean mayInterruptIfRunning) {
+			this.canceled = true;
+			return true;
+		}
+
+		@Override
+		public boolean isCancelled() {
+			return canceled;
+		}
+
+		@Override
+		public boolean isDone() {
+			return true;
+		}
+
+		@Override
+		public V get() throws ExecutionException {
+			throw new ExecutionException(exception);
+		}
+
+		@Override
+		public V get(long timeout, TimeUnit unit) throws ExecutionException {
+			throw new ExecutionException(exception);
 		}
 
 	}
