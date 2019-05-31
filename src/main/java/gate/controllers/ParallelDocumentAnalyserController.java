@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.log4j.Logger;
 
@@ -42,6 +43,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	private static Logger logger = Logger.getLogger(ParallelDocumentAnalyserController.class);
 
 	private Integer parallelTasks;
+	private Boolean failOnException;
 	private Boolean synchronizeCorpus;
 	private Boolean orderedDocumentLoading;
 
@@ -68,7 +70,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	@Override
 	protected void executeImpl() throws ExecutionException {
-		interrupted = false;
 		if (corpus == null) {
 			throw new ExecutionException("corpus is null");
 		}
@@ -110,10 +111,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 			@Override
 			public Runnable next() {
-				if (isInterrupted()) {
-					queue.interrupt();
-					return null;
-				}
 				int documentIndex = documentIndexHolder.getAndAdd(1);
 
 				Boolean unloadDocumentUpfront;
@@ -193,28 +190,31 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		});
 
 		try {
-			queue.awaitTasksComplete();
-		} catch (Exception e) {
-			queue.interrupt();
-			while (true) {
+			while (!queue.isInterrupted() && !queue.hasCompleted()) {
 				try {
 					queue.awaitTasksComplete();
-					break;
-				} catch (Exception e1) {
-					logger.error("another parallel execution exception", e1);
+				} catch (Exception e) {
+					if (failOnException) {
+						queue.interrupt();
+						while (true) {
+							try {
+								queue.awaitTasksComplete();
+								break;
+							} catch (Exception e1) {
+								logger.error("another parallel execution exception", e1);
+							}
+						}
+						throw new ExecutionException(e);
+					} else {
+						logger.error("exception occured while processing", e);
+					}
 				}
 			}
-			throw new ExecutionException(e);
 		} finally {
 			synchronized (parallelProcessingResources) {
 				cleanupDuplicatedResources(parallelProcessingResources);
 			}
 		}
-	}
-
-	@Override
-	public synchronized void interrupt() {
-		interrupted = true;
 	}
 
 	protected Collection<List<ProcessingResource>> buildParallelProcessingResources()
@@ -245,9 +245,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			Document document) throws ExecutionException {
 		for (int processingResourceIndex = 0; processingResourceIndex < processingResources
 				.size(); processingResourceIndex++) {
-			if (isInterrupted()) {
-				break;
-			}
 			ProcessingResource processingResource = processingResources.get(processingResourceIndex);
 			if (processingResource instanceof LanguageAnalyser) {
 				LanguageAnalyser languageAnalyser = (LanguageAnalyser) processingResource;
@@ -282,6 +279,17 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	public Integer getParallelTasks() {
 		return parallelTasks;
+	}
+
+	@RunTime
+	@Optional
+	@CreoleParameter(comment = "fail on exceptions while loading, processing and unloading documents (otherwise log)", defaultValue = "true")
+	public void setFailOnException(Boolean failOnException) {
+		this.failOnException = failOnException;
+	}
+
+	public Boolean getFailOnException() {
+		return failOnException;
 	}
 
 	@RunTime
