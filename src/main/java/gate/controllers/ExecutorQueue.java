@@ -78,7 +78,7 @@ public class ExecutorQueue {
 	}
 
 	public void awaitTasksComplete() throws InterruptedException, ExecutionException {
-		while ((!interrupted && (!tasksQueue.isEmpty() || !futures.isEmpty())) || (interrupted && !futures.isEmpty())) {
+		while (!(!interrupted && tasksQueue.isEmpty() && futures.isEmpty()) || (interrupted && futures.isEmpty())) {
 			Future<?> future = null;
 			synchronized (this) {
 				if (!futures.isEmpty()) {
