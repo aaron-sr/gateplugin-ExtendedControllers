@@ -23,6 +23,7 @@ public class ExecutorQueue {
 	}
 
 	public synchronized void submit(Iterator<Runnable> tasks) {
+		interrupted = false;
 		tasksQueue.add(tasks);
 
 		executeNext();
@@ -30,6 +31,7 @@ public class ExecutorQueue {
 
 	public synchronized void interrupt() {
 		interrupted = true;
+		tasksQueue.clear();
 	}
 
 	public boolean isInterrupted() {
@@ -77,7 +79,7 @@ public class ExecutorQueue {
 		executeNext();
 	}
 
-	public void awaitTasksComplete() throws InterruptedException, ExecutionException {
+	public void awaitCompleted() throws InterruptedException, ExecutionException {
 		while (!(!interrupted && tasksQueue.isEmpty() && futures.isEmpty()) || (interrupted && futures.isEmpty())) {
 			Future<?> future = null;
 			synchronized (this) {

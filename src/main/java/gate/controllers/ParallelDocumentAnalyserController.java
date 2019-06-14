@@ -22,6 +22,7 @@ import gate.ProcessingResource;
 import gate.Resource;
 import gate.creole.AbstractController;
 import gate.creole.ExecutionException;
+import gate.creole.ExecutionInterruptedException;
 import gate.creole.Parameter;
 import gate.creole.ResourceData;
 import gate.creole.ResourceInstantiationException;
@@ -53,6 +54,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	protected Corpus corpus;
 	protected Document document;
 
+	private ExecutorQueue queue;
+	private Collection<ProcessingResource> parallelProcessingResources;
+
 	public ParallelDocumentAnalyserController() {
 		processingResources = Collections.synchronizedList(new ArrayList<ProcessingResource>());
 		Gate.getCreoleRegister().addCreoleListener(this);
@@ -69,6 +73,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	@Override
 	protected void executeImpl() throws ExecutionException {
+		interrupted = false;
 		if (corpus == null) {
 			throw new ExecutionException("corpus is null");
 		}
@@ -82,6 +87,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	protected void executeNoneParallel() throws ExecutionException {
 		if (document == null) {
 			for (int documentIndex = 0; documentIndex < corpus.size(); documentIndex++) {
+				if (isInterrupted()) {
+					throw new ExecutionInterruptedException();
+				}
 				boolean unloadDocument;
 				Document document;
 				if (synchronizeCorpus) {
@@ -122,11 +130,15 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		Collection<List<ProcessingResource>> parallelProcessingResources;
 		try {
 			parallelProcessingResources = buildParallelProcessingResources();
+			this.parallelProcessingResources = new ArrayList<>();
+			for (List<ProcessingResource> processingResources : parallelProcessingResources) {
+				this.parallelProcessingResources.addAll(processingResources);
+			}
 		} catch (ResourceInstantiationException e) {
 			throw new ExecutionException(e);
 		}
 
-		ExecutorQueue queue = new ExecutorQueue(executor, parallelTasks);
+		queue = new ExecutorQueue(executor, parallelTasks);
 		AtomicInteger documentIndexHolder = new AtomicInteger(0);
 
 		queue.submit(new Iterator<Runnable>() {
@@ -217,15 +229,15 @@ public class ParallelDocumentAnalyserController extends AbstractController
 		});
 
 		try {
-			while (!queue.isInterrupted() && !queue.hasCompleted()) {
+			while (!queue.hasCompleted()) {
 				try {
-					queue.awaitTasksComplete();
+					queue.awaitCompleted();
 				} catch (Exception e) {
 					if (failOnException) {
 						queue.interrupt();
 						while (true) {
 							try {
-								queue.awaitTasksComplete();
+								queue.awaitCompleted();
 								break;
 							} catch (Exception e1) {
 								logger.error("another parallel execution exception", e1);
@@ -235,6 +247,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 					} else {
 						logger.error("exception occured while processing", e);
 					}
+				}
+				if (isInterrupted()) {
+					throw new ExecutionInterruptedException();
 				}
 			}
 		} finally {
@@ -272,6 +287,9 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			Document document) throws ExecutionException {
 		for (int processingResourceIndex = 0; processingResourceIndex < processingResources
 				.size(); processingResourceIndex++) {
+			if (isInterrupted()) {
+				return;
+			}
 			ProcessingResource processingResource = processingResources.get(processingResourceIndex);
 			if (processingResource instanceof LanguageAnalyser) {
 				LanguageAnalyser languageAnalyser = (LanguageAnalyser) processingResource;
@@ -295,6 +313,27 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			throw new ExecutionException(
 					"failed to run processing resource " + processingResourceIndex + " on document " + documentIndex,
 					e);
+		}
+	}
+
+	@Override
+	public synchronized void interrupt() {
+		if (document == null && parallelTasks > 1) {
+			interruptParallel();
+		} else {
+			interruptNoneParallel();
+		}
+	}
+
+	protected void interruptNoneParallel() {
+		super.interrupt();
+	}
+
+	protected void interruptParallel() {
+		interrupted = true;
+		queue.interrupt();
+		for (ProcessingResource processingResource : parallelProcessingResources) {
+			processingResource.interrupt();
 		}
 	}
 
