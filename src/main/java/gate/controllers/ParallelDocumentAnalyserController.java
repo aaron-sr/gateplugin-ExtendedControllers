@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.log4j.Logger;
 
@@ -83,8 +82,36 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	protected void executeNoneParallel() throws ExecutionException {
 		if (document == null) {
 			for (int documentIndex = 0; documentIndex < corpus.size(); documentIndex++) {
-				Document document = corpus.get(documentIndex);
-				executeProcessingResources(processingResources, documentIndex, document);
+				boolean unloadDocument;
+				Document document;
+				if (synchronizeCorpus) {
+					synchronized (corpus) {
+						unloadDocument = !corpus.isDocumentLoaded(documentIndex);
+						document = corpus.get(documentIndex);
+					}
+				} else {
+					unloadDocument = !corpus.isDocumentLoaded(documentIndex);
+					document = corpus.get(documentIndex);
+				}
+				try {
+					executeProcessingResources(processingResources, documentIndex, document);
+				} catch (ExecutionException e) {
+					if (failOnException) {
+						throw e;
+					} else {
+						logger.error("exception occured while processing", e);
+					}
+				} finally {
+					if (unloadDocument) {
+						if (synchronizeCorpus) {
+							synchronized (corpus) {
+								Factory.deleteResource(document);
+							}
+						} else {
+							Factory.deleteResource(document);
+						}
+					}
+				}
 			}
 		} else {
 			executeProcessingResources(processingResources, corpus.indexOf(document), document);
