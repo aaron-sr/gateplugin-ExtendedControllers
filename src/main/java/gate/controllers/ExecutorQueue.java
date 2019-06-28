@@ -39,7 +39,7 @@ public class ExecutorQueue {
 	}
 
 	public boolean hasCompleted() {
-		return tasksQueue.isEmpty() && futures.isEmpty();
+		return tasksQueue.isEmpty() && submittedTasks == 0;
 	}
 
 	private synchronized void executeNext() {
