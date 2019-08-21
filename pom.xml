@@ -50,6 +50,11 @@
 
 	<dependencies>
 		<dependency>
+			<groupId>gate.utils</groupId>
+			<artifactId>gate-utils</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
+		<dependency>
 			<groupId>org.mapdb</groupId>
 			<artifactId>mapdb</artifactId>
 			<version>3.0.7</version>
