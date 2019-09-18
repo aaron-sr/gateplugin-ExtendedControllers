@@ -66,24 +66,18 @@ public class CacheCheck extends CacheAnalyser implements CustomDuplication {
 		String hash = buildHash(document);
 		Integer cloneIndex = cache.get(hash);
 		if (cloneIndex != null) {
-			boolean unloadDocument = false;
-			Document copy = null;
-			int documentIndex;
 			synchronized (corpus) {
-				documentIndex = corpus.indexOf(document);
-				if (documentIndex != cloneIndex) {
-					unloadDocument = !corpus.isDocumentLoaded(cloneIndex);
-					copy = corpus.get(cloneIndex);
+				int documentIndex = corpus.indexOf(document);
+				if (documentIndex == cloneIndex) {
+					return;
 				}
-			}
-			if (copy != null) {
-				if (document.getContent().toString().contentEquals(copy.getContent().toString())) {
-					copyDocumentValues(copy, document, annotationSetNames, relationSetNames, featureKeys);
+				boolean unloadClone = !corpus.isDocumentLoaded(cloneIndex);
+				Document cloneDocument = corpus.get(cloneIndex);
+				if (document.getContent().toString().contentEquals(cloneDocument.getContent().toString())) {
+					copyDocumentValues(cloneDocument, document, annotationSetNames, relationSetNames, featureKeys);
 				}
-				if (unloadDocument) {
-					synchronized (corpus) {
-						Factory.deleteResource(copy);
-					}
+				if (unloadClone) {
+					Factory.deleteResource(cloneDocument);
 				}
 			}
 		}
