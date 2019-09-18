@@ -84,10 +84,17 @@ public class ConditionalParallelDocumentAnalyserController extends ParallelDocum
 	@Override
 	protected void runComponent(int documentIndex, int processingResourceIndex, ProcessingResource processingResource)
 			throws ExecutionException {
-		RunningStrategy runningStrategy = parallelRunningStrategies.get(processingResource)
-				.get(processingResourceIndex);
-		if (runningStrategy.shouldRun()) {
-			super.runComponent(documentIndex, processingResourceIndex, processingResource);
+		if (isParallelExecution()) {
+			RunningStrategy runningStrategy = parallelRunningStrategies.get(processingResource)
+					.get(processingResourceIndex);
+			if (runningStrategy.shouldRun()) {
+				super.runComponent(documentIndex, processingResourceIndex, processingResource);
+			}
+		} else if (isNoneParallelExecution()) {
+			RunningStrategy runningStrategy = strategiesList.get(processingResourceIndex);
+			if (runningStrategy.shouldRun()) {
+				super.runComponent(documentIndex, processingResourceIndex, processingResource);
+			}
 		}
 	}
 

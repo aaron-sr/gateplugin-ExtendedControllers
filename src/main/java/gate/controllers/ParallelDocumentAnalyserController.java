@@ -56,6 +56,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 
 	private ExecutorQueue queue;
 	private Collection<ProcessingResource> parallelProcessingResources;
+	private Boolean parallelExecution = null;
 
 	public ParallelDocumentAnalyserController() {
 		processingResources = Collections.synchronizedList(new ArrayList<ProcessingResource>());
@@ -78,10 +79,21 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			throw new ExecutionException("corpus is null");
 		}
 		if (document == null && parallelTasks > 1) {
+			parallelExecution = true;
 			executeParallel();
 		} else {
+			parallelExecution = false;
 			executeNoneParallel();
 		}
+		parallelExecution = null;
+	}
+
+	protected boolean isParallelExecution() {
+		return parallelExecution == true;
+	}
+
+	protected boolean isNoneParallelExecution() {
+		return parallelExecution == false;
 	}
 
 	protected void executeNoneParallel() throws ExecutionException {
