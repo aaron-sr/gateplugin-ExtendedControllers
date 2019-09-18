@@ -122,7 +122,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 						logger.error("exception occured while processing", e);
 					}
 				} finally {
-					if (unloadDocument) {
+					if (!failOnException && unloadDocument) {
 						if (synchronizeCorpus) {
 							synchronized (corpus) {
 								Factory.deleteResource(document);
@@ -204,7 +204,7 @@ public class ParallelDocumentAnalyserController extends AbstractController
 						try {
 							executeDocumentParallel(parallelProcessingResources, documentIndex, document);
 						} finally {
-							if (unloadDocument) {
+							if (!failOnException && unloadDocument) {
 								if (synchronizeCorpus) {
 									synchronized (corpus) {
 										Factory.deleteResource(document);
