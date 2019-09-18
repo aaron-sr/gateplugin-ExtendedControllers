@@ -33,6 +33,7 @@ import gate.creole.metadata.RunTime;
 import gate.event.ControllerEvent;
 import gate.event.CreoleEvent;
 import gate.event.CreoleListener;
+import gate.util.Err;
 import gate.util.GateException;
 import gate.util.GateRuntimeException;
 
@@ -113,16 +114,20 @@ public class ParallelDocumentAnalyserController extends AbstractController
 					unloadDocument = !corpus.isDocumentLoaded(documentIndex);
 					document = corpus.get(documentIndex);
 				}
+
+				boolean exceptionOccured = false;
 				try {
 					executeProcessingResources(processingResources, documentIndex, document);
 				} catch (ExecutionException e) {
+					exceptionOccured = true;
 					if (failOnException) {
 						throw e;
 					} else {
 						logger.error("exception occured while processing", e);
+						e.printStackTrace(Err.getPrintWriter());
 					}
 				} finally {
-					if (!failOnException && unloadDocument) {
+					if (!(failOnException && exceptionOccured) && unloadDocument) {
 						if (synchronizeCorpus) {
 							synchronized (corpus) {
 								Factory.deleteResource(document);
@@ -134,7 +139,16 @@ public class ParallelDocumentAnalyserController extends AbstractController
 				}
 			}
 		} else {
-			executeProcessingResources(processingResources, corpus.indexOf(document), document);
+			try {
+				executeProcessingResources(processingResources, corpus.indexOf(document), document);
+			} catch (ExecutionException e) {
+				if (failOnException) {
+					throw e;
+				} else {
+					logger.error("exception occured while processing", e);
+					e.printStackTrace(Err.getPrintWriter());
+				}
+			}
 		}
 	}
 
@@ -201,10 +215,15 @@ public class ParallelDocumentAnalyserController extends AbstractController
 								document = corpus.get(documentIndex);
 							}
 						}
+
+						boolean exceptionOccured = false;
 						try {
 							executeDocumentParallel(parallelProcessingResources, documentIndex, document);
+						} catch (Exception e) {
+							exceptionOccured = true;
+							throw e;
 						} finally {
-							if (!failOnException && unloadDocument) {
+							if (!(failOnException && exceptionOccured) && unloadDocument) {
 								if (synchronizeCorpus) {
 									synchronized (corpus) {
 										Factory.deleteResource(document);
@@ -253,11 +272,13 @@ public class ParallelDocumentAnalyserController extends AbstractController
 								break;
 							} catch (Exception e1) {
 								logger.error("another parallel execution exception", e1);
+								e.addSuppressed(e1);
 							}
 						}
 						throw new ExecutionException(e);
 					} else {
 						logger.error("exception occured while processing", e);
+						e.printStackTrace(Err.getPrintWriter());
 					}
 				}
 				if (isInterrupted()) {
