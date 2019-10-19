@@ -153,6 +153,8 @@ public class ParallelDocumentAnalyserController extends AbstractController
 	}
 
 	protected void executeParallel() throws ExecutionException {
+		queue = new ExecutorQueue(executor, parallelTasks);
+
 		Collection<List<ProcessingResource>> parallelProcessingResources;
 		try {
 			parallelProcessingResources = buildParallelProcessingResources();
@@ -164,7 +166,6 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			throw new ExecutionException(e);
 		}
 
-		queue = new ExecutorQueue(executor, parallelTasks);
 		AtomicInteger documentIndexHolder = new AtomicInteger(0);
 
 		queue.submit(new Iterator<Runnable>() {
@@ -296,12 +297,45 @@ public class ParallelDocumentAnalyserController extends AbstractController
 			throws ResourceInstantiationException {
 		Collection<List<ProcessingResource>> parallelProcessingResources = new ArrayList<>();
 		parallelProcessingResources.add(processingResources);
-		for (int i = 1; i < parallelTasks; i++) {
-			List<ProcessingResource> duplicatedResources = new ArrayList<ProcessingResource>();
-			for (ProcessingResource processingResource : processingResources) {
-				duplicatedResources.add((ProcessingResource) Factory.duplicate(processingResource));
+
+		queue.submit(new Iterator<Runnable>() {
+
+			private int i = 1;
+
+			@Override
+			public boolean hasNext() {
+				return i < parallelTasks;
 			}
-			parallelProcessingResources.add(duplicatedResources);
+
+			@Override
+			public Runnable next() {
+				i++;
+				return new Runnable() {
+
+					@Override
+					public void run() {
+						List<ProcessingResource> duplicatedResources = new ArrayList<ProcessingResource>();
+						for (ProcessingResource processingResource : processingResources) {
+							synchronized (processingResource) {
+								try {
+									duplicatedResources.add((ProcessingResource) Factory.duplicate(processingResource));
+								} catch (ResourceInstantiationException e) {
+									throw new RuntimeException(e);
+								}
+							}
+						}
+						synchronized (parallelProcessingResources) {
+							parallelProcessingResources.add(duplicatedResources);
+						}
+					}
+				};
+			}
+		});
+
+		try {
+			queue.awaitCompleted();
+		} catch (Exception e) {
+			throw new ResourceInstantiationException(e);
 		}
 		return parallelProcessingResources;
 	}
