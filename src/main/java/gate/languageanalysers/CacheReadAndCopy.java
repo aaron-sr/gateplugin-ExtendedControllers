@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 
 import org.apache.log4j.Logger;
@@ -12,14 +11,8 @@ import org.apache.log4j.Logger;
 import gate.Annotation;
 import gate.AnnotationSet;
 import gate.Document;
-import gate.Factory;
-import gate.Factory.DuplicationContext;
-import gate.Gate;
 import gate.Resource;
-import gate.creole.AbstractResource;
 import gate.creole.CustomDuplication;
-import gate.creole.ExecutionException;
-import gate.creole.ResourceData;
 import gate.creole.ResourceInstantiationException;
 import gate.creole.metadata.CreoleParameter;
 import gate.creole.metadata.CreoleResource;
@@ -28,14 +21,13 @@ import gate.relations.RelationSet;
 import gate.util.GateRuntimeException;
 import gate.util.InvalidOffsetException;
 
-@CreoleResource(name = "CacheCheck", comment = "Check part for cache, if document with same content was already processed and in case annotations, relations and features are copied")
-public class CacheCheck extends CacheAnalyser implements CustomDuplication {
+@CreoleResource(name = "CacheReadAndCopy", comment = "Check part for cache, if document with same content was already processed and in case annotations, relations and features values are copied")
+public class CacheReadAndCopy extends CacheRead implements CustomDuplication {
 	private static final long serialVersionUID = -864376621998897297L;
-	private static Logger logger = Logger.getLogger(CacheCheck.class);
+	private static Logger logger = Logger.getLogger(CacheReadAndCopy.class);
 
 	private Set<String> annotationSetNames;
 	private Set<String> relationSetNames;
-	private Set<Object> featureKeys;
 
 	@Override
 	public Resource init() throws ResourceInstantiationException {
@@ -44,47 +36,7 @@ public class CacheCheck extends CacheAnalyser implements CustomDuplication {
 	}
 
 	@Override
-	public Resource duplicate(DuplicationContext ctx) throws ResourceInstantiationException {
-		ResourceData resourceData = Gate.getCreoleRegister().get(CacheCheck.class.getCanonicalName());
-		CacheCheck duplicate = new CacheCheck();
-
-		duplicate.setName(resourceData.getName() + "_" + Gate.genSym());
-		AbstractResource.setParameterValues(duplicate, getInitParameterValues());
-		AbstractResource.setParameterValues(duplicate, getRuntimeParameterValues());
-		duplicate.setFeatures(Factory.newFeatureMap());
-		duplicate.getFeatures().putAll(getFeatures());
-
-		duplicate.messageDigest = initMessageDigest();
-		duplicate.cache = cache;
-
-		resourceData.addInstantiation(duplicate);
-		return duplicate;
-	}
-
-	@Override
-	public void execute() throws ExecutionException {
-		String hash = buildHash(document);
-		Integer cloneIndex = cache.get(hash);
-		if (cloneIndex != null) {
-			synchronized (corpus) {
-				int documentIndex = corpus.indexOf(document);
-				if (documentIndex == cloneIndex) {
-					return;
-				}
-				boolean unloadClone = !corpus.isDocumentLoaded(cloneIndex);
-				Document cloneDocument = corpus.get(cloneIndex);
-				if (document.getContent().toString().contentEquals(cloneDocument.getContent().toString())) {
-					copyDocumentValues(cloneDocument, document, annotationSetNames, relationSetNames, featureKeys);
-				}
-				if (unloadClone) {
-					Factory.deleteResource(cloneDocument);
-				}
-			}
-		}
-	}
-
-	public static final void copyDocumentValues(Document fromDocument, Document toDocument,
-			Set<String> annotationSetNames, Set<String> relationSetNames, Set<Object> featureKeys) {
+	protected void applyCache(Document fromDocument, Document toDocument) {
 		Map<Integer, Integer> annotationMapping = new HashMap<>();
 		if ((annotationSetNames == null || annotationSetNames.contains(""))
 				&& !fromDocument.getAnnotations().isEmpty()) {
@@ -121,13 +73,8 @@ public class CacheCheck extends CacheAnalyser implements CustomDuplication {
 				}
 			}
 		}
-		if (!fromDocument.getFeatures().isEmpty()) {
-			for (Entry<Object, Object> entry : fromDocument.getFeatures().entrySet()) {
-				if (featureKeys == null || featureKeys.contains(entry.getKey())) {
-					toDocument.getFeatures().put(entry.getKey(), entry.getValue());
-				}
-			}
-		}
+
+		copyFeatures(fromDocument, toDocument);
 	}
 
 	public static final Integer copyAnnotation(AnnotationSet annotationSet, Annotation annotation) {

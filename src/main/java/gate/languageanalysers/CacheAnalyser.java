@@ -8,7 +8,13 @@ import java.util.Map;
 import org.apache.log4j.Logger;
 
 import gate.Document;
+import gate.Factory;
+import gate.Factory.DuplicationContext;
+import gate.Gate;
+import gate.Resource;
 import gate.creole.AbstractLanguageAnalyser;
+import gate.creole.AbstractResource;
+import gate.creole.ResourceData;
 import gate.creole.ResourceInstantiationException;
 import gate.creole.metadata.CreoleParameter;
 
@@ -27,18 +33,34 @@ public class CacheAnalyser extends AbstractLanguageAnalyser {
 		messageDigest = initMessageDigest();
 	}
 
+	public Resource duplicate(DuplicationContext ctx) throws ResourceInstantiationException {
+		ResourceData resourceData = Gate.getCreoleRegister().get(this.getClass().getCanonicalName());
+		CacheAnalyser duplicate;
+		try {
+			duplicate = this.getClass().getConstructor().newInstance();
+		} catch (Exception e) {
+			throw new ResourceInstantiationException(e);
+		}
+
+		duplicate.setName(resourceData.getName() + "_" + Gate.genSym());
+		AbstractResource.setParameterValues(duplicate, getInitParameterValues());
+		AbstractResource.setParameterValues(duplicate, getRuntimeParameterValues());
+		duplicate.setFeatures(Factory.newFeatureMap());
+		duplicate.getFeatures().putAll(getFeatures());
+
+		duplicate.messageDigest = initMessageDigest();
+		duplicate.cache = cache;
+
+		resourceData.addInstantiation(duplicate);
+		return duplicate;
+	}
+
 	protected final MessageDigest initMessageDigest() throws ResourceInstantiationException {
 		try {
 			return MessageDigest.getInstance(hashAlgorithm);
 		} catch (NoSuchAlgorithmException e) {
 			throw new ResourceInstantiationException(e);
 		}
-	}
-
-	@Override
-	public void cleanup() {
-
-		super.cleanup();
 	}
 
 	protected String buildHash(Document document) {
