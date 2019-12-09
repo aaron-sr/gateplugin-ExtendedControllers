@@ -59,14 +59,16 @@ public class ExecutorQueue {
 					if (exception != null) {
 						Future<?> failed = new FailedFuture<>(exception);
 						futures.add(failed);
-						notify();
-					} else if (next != null) {
+					} else if (next == null) {
+						Future<?> failed = new FailedFuture<>(new NullPointerException("runnable is null"));
+						futures.add(failed);
+					} else {
 						RunnableTask runnableTask = new RunnableTask(this, next);
 						Future<?> submit = executor.submit(runnableTask);
 						futures.add(submit);
 						submittedTasks++;
-						notify();
 					}
+					notify();
 				} else {
 					taskQueueIterator.remove();
 					continue;
