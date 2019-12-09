@@ -32,6 +32,7 @@ public class ExecutorQueue {
 	public synchronized void interrupt() {
 		interrupted = true;
 		tasksQueue.clear();
+		notify();
 	}
 
 	public boolean isInterrupted() {
@@ -39,7 +40,7 @@ public class ExecutorQueue {
 	}
 
 	public boolean hasCompleted() {
-		return tasksQueue.isEmpty() && submittedTasks == 0;
+		return tasksQueue.isEmpty() && submittedTasks == 0 && futures.isEmpty();
 	}
 
 	private synchronized void executeNext() {
@@ -58,11 +59,13 @@ public class ExecutorQueue {
 					if (exception != null) {
 						Future<?> failed = new FailedFuture<>(exception);
 						futures.add(failed);
+						notify();
 					} else if (next != null) {
 						RunnableTask runnableTask = new RunnableTask(this, next);
 						Future<?> submit = executor.submit(runnableTask);
 						futures.add(submit);
 						submittedTasks++;
+						notify();
 					}
 				} else {
 					taskQueueIterator.remove();
@@ -80,18 +83,20 @@ public class ExecutorQueue {
 	}
 
 	public void awaitCompleted() throws InterruptedException, ExecutionException {
-		while (!(!interrupted && tasksQueue.isEmpty() && futures.isEmpty()) || (interrupted && futures.isEmpty())) {
-			Future<?> future = null;
+		while ((!interrupted && !hasCompleted()) || (interrupted && !futures.isEmpty())) {
+			if (!interrupted && (executor.isShutdown() || executor.isTerminated())) {
+				throw new IllegalStateException();
+			}
+			Future<?> future;
 			synchronized (this) {
-				if (!futures.isEmpty()) {
-					Iterator<Future<?>> iterator = futures.iterator();
-					future = iterator.next();
-					iterator.remove();
+				while (futures.isEmpty()) {
+					wait();
 				}
+				Iterator<Future<?>> iterator = futures.iterator();
+				future = iterator.next();
+				iterator.remove();
 			}
-			if (future != null) {
-				future.get();
-			}
+			future.get();
 		}
 	}
 
