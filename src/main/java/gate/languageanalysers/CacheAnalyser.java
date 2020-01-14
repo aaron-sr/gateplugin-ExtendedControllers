@@ -16,6 +16,7 @@ import gate.creole.AbstractResource;
 import gate.creole.ResourceData;
 import gate.creole.ResourceInstantiationException;
 import gate.creole.metadata.CreoleParameter;
+import gate.creole.metadata.Optional;
 
 public class CacheAnalyser extends AbstractLanguageAnalyser {
 	private static final long serialVersionUID = 6870246820429562465L;
@@ -55,20 +56,26 @@ public class CacheAnalyser extends AbstractLanguageAnalyser {
 	}
 
 	protected final MessageDigest initMessageDigest() throws ResourceInstantiationException {
-		try {
-			return MessageDigest.getInstance(hashAlgorithm);
-		} catch (NoSuchAlgorithmException e) {
-			throw new ResourceInstantiationException(e);
+		if (hasValue(hashAlgorithm)) {
+			try {
+				return MessageDigest.getInstance(hashAlgorithm);
+			} catch (NoSuchAlgorithmException e) {
+				throw new ResourceInstantiationException(e);
+			}
 		}
+		return null;
 	}
 
 	protected String buildHash(Document document) {
 		String content = document.getContent().toString();
-		messageDigest.update(content.getBytes());
-		byte[] hashBytes = messageDigest.digest();
-		messageDigest.reset();
-		String hashString = new BigInteger(1, hashBytes).toString(16);
-		return hashString;
+		if (messageDigest != null) {
+			messageDigest.update(content.getBytes());
+			byte[] hashBytes = messageDigest.digest();
+			messageDigest.reset();
+			String hashString = new BigInteger(1, hashBytes).toString(16);
+			return hashString;
+		}
+		return content;
 	}
 
 	public String getCacheName() {
@@ -84,9 +91,14 @@ public class CacheAnalyser extends AbstractLanguageAnalyser {
 		return hashAlgorithm;
 	}
 
-	@CreoleParameter(comment = "the name of the hash function (need to be an instance from java.security.MessageDigest)", defaultValue = "SHA-1")
+	@Optional
+	@CreoleParameter(comment = "the name of the hash function (need to be an instance from java.security.MessageDigest, empty uses complete document content)", defaultValue = "SHA-1")
 	public void setHashAlgorithm(String hashAlgorithm) {
 		this.hashAlgorithm = hashAlgorithm;
+	}
+
+	protected final static boolean hasValue(String string) {
+		return string != null && string.trim().length() > 0;
 	}
 
 }
