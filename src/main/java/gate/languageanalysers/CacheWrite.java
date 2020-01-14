@@ -27,7 +27,7 @@ public class CacheWrite extends CacheAnalyser implements CustomDuplication {
 			index = corpus.indexOf(document);
 		}
 
-		cache.putIfAbsent(hash, index);
+		cache.add(corpus, index, hash);
 	}
 
 }

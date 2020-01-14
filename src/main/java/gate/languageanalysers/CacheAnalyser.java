@@ -3,7 +3,6 @@ package gate.languageanalysers;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Map;
 
 import org.apache.log4j.Logger;
 
@@ -26,10 +25,10 @@ public class CacheAnalyser extends AbstractLanguageAnalyser {
 	protected String hashAlgorithm;
 
 	protected MessageDigest messageDigest;
-	protected Map<String, Integer> cache;
+	protected Cache cache;
 
 	protected void initCache() throws ResourceInstantiationException {
-		cache = CacheRegister.getInstance().getCache(cacheName);
+		cache = Cache.getInstance(cacheName);
 		messageDigest = initMessageDigest();
 	}
 

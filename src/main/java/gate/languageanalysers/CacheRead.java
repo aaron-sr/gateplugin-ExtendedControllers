@@ -3,9 +3,11 @@ package gate.languageanalysers;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import gate.Corpus;
 import gate.Document;
 import gate.Factory;
 import gate.creole.ExecutionException;
+import gate.languageanalysers.Cache.CacheResult;
 
 public abstract class CacheRead extends CacheAnalyser {
 	private static final long serialVersionUID = 8779736540972451396L;
@@ -15,15 +17,17 @@ public abstract class CacheRead extends CacheAnalyser {
 	@Override
 	public void execute() throws ExecutionException {
 		String hash = buildHash(document);
-		Integer cloneIndex = cache.get(hash);
-		if (cloneIndex != null) {
-			synchronized (corpus) {
-				int documentIndex = corpus.indexOf(document);
+		CacheResult result = cache.get(hash);
+		if (result != null) {
+			Corpus cloneCorpus = result.getCorpus();
+			Integer cloneIndex = result.getIndex();
+			synchronized (cloneCorpus) {
+				int documentIndex = cloneCorpus.indexOf(document);
 				if (documentIndex == cloneIndex) {
 					return;
 				}
-				boolean unloadClone = !corpus.isDocumentLoaded(cloneIndex);
-				Document cloneDocument = corpus.get(cloneIndex);
+				boolean unloadClone = !cloneCorpus.isDocumentLoaded(cloneIndex);
+				Document cloneDocument = cloneCorpus.get(cloneIndex);
 				if (document.getContent().toString().contentEquals(cloneDocument.getContent().toString())) {
 					applyCache(cloneDocument, document);
 				}
