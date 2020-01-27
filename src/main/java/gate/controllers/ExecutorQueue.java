@@ -114,8 +114,11 @@ public class ExecutorQueue {
 
 		@Override
 		public void run() {
-			runnable.run();
-			queue.finishedTask(this);
+			try {
+				runnable.run();
+			} finally {
+				queue.finishedTask(this);
+			}
 		}
 
 	}
